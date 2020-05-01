@@ -100,11 +100,15 @@ def handle_tv_link_message(bot, tvlink, data):
 			logger.error(resp['error'])
 			return  
 
-		if resp['exchange'] in bot.link_map:
-			resp['exchange_link'] = bot.link_map[resp['exchange']]
-		else:
-			resp['exchange_link'] = bot.link_map[random.choice(bot.link_map_list)]
+		resp['exchange_link'] = bot.link_map[random.choice(bot.link_map_list)]
 
+		if 'exchange' in resp:
+			if resp['exchange'] in bot.link_map:
+				resp['exchange_link'] = bot.link_map[resp['exchange']]
+		else:
+			resp['exchange'] = '' 
+			resp['price'] = '' 
+			 
 		reply = "{} posted [b][url=http://{}]{}[/url]:{}:{} at {}[/b]".format(
 		 		data['user']['name'], resp['exchange_link'], resp['exchange'], resp['ticker'], resp['timeframe_formatted'], resp['price'],
 		)
@@ -114,6 +118,7 @@ def handle_tv_link_message(bot, tvlink, data):
 		msg = "Failed to receive a reply from tvchartinfo bot"
 		bot.ts3conn.sendtextmessage(targetmode=2, target=1, msg=msg)
 		print(msg)
+		return 
 
 	# Make hashtag selection list
 	ht_selection = [ resp['ticker'].lower(), resp['ticker'].upper(), ]
