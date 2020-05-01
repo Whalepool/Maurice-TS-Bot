@@ -50,15 +50,20 @@ def notify_text_message(data):
 	results = re.findall(r""+regex_query, data['txt_msg'])
 	if len(results) >= 1:
 		username = results[0][1]
-		regex_query = "({}.+)".format(username)
+		regex_query = "({}+)".format(username)
 
 		reply = None
+
 		for c in reversed(bot.client_list):
 
 			node = bot.client_list[c]
 			matches = re.search(regex_query, node['name'], re.IGNORECASE)
-
+			# if node['name'] == username:
 			if matches is not None:
+				# pprint(regex_query)
+				# pprint(node['name'])
+				# pprint( re.search(regex_query, node['name'], re.IGNORECASE) ) 
+
 				reply = "{} @ [i]{}[/i]".format(node['log_parsed_bb'], node['log_time'].strftime("%Y-%m-%d %H\:\%M"))
 				bot.ts3conn.sendtextmessage(targetmode=2, target=1, msg=reply)
 				return 
@@ -108,7 +113,7 @@ def handle_tv_link_message(bot, tvlink, data):
 		else:
 			resp['exchange'] = '' 
 			resp['price'] = '' 
-			 
+
 		reply = "{} posted [b][url=http://{}]{}[/url]:{}:{} at {}[/b]".format(
 		 		data['user']['name'], resp['exchange_link'], resp['exchange'], resp['ticker'], resp['timeframe_formatted'], resp['price'],
 		)
