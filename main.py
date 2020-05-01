@@ -35,10 +35,11 @@ def notify_text_message(data):
 	logger.info(bot.parse_log(data))
 
 	# Look for TV Links in the message 
-	regex_query = "([http|https]:\/\/www\.tradingview\.com\/[A-Za-z]\/[A-Za-z0-9\/]+)"
+	regex_query = "(https?:\/\/www\.tradingview\.com\/[A-Za-z]\/[A-Za-z0-9\/]+)"
 	results = re.findall(r""+regex_query, data['txt_msg'])
 
 	if len(results) >= 1:
+
 		tv_link = results[0][0]
 		thread = threading.Thread(target=handle_tv_link_message, args=[bot, tv_link, data], daemon=True)
 		thread.start()
