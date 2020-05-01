@@ -12,10 +12,32 @@ Used in `main.py` for:
 
 Overall a fun little project. 
 
+### Requirements
+python > 3.8  
+[Running WP Dispatchers](https://github.com/Whalepool/Dispatchers)  
+
+
+##### Make your config file
+```bash
+cp config.sample.yaml config.yaml
+
+# Make sure all your config details are correct
+```
 
 ### Usage 
-```
-python main.py
+```bash 
+# Make sure we have screen installed
+# sudo apt-get install screen 
+
+# cd into the Maurice folder
+# execute the zmqproxy.py script inside a screen and auto detach 
+screen -S maurice -d -m python main.py 
+
+# You can also run them independently outputting to /dev/null or create service files for systemd etc.
+# Personally i like them in the tmux session
+
+# You can initiate a request / reply example using 
+python example_request_reply.py 
 ```  
 
 
