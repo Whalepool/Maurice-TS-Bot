@@ -18,10 +18,6 @@ Overall a fun little project.
 python main.py
 ```  
 
-Cron script to keep charts folder clean
-```
-find /path/to/Maurice/charts/ -mindepth 1 -mmin +10 -delete
-```
 
 ### Events
 ```python
@@ -35,7 +31,9 @@ find /path/to/Maurice/charts/ -mindepth 1 -mmin +10 -delete
 @bot.on('notify_text_message')
 ```
 
-![Maurice](https://i.imgur.com/tT76fc9.jpg)  
-
 Terminal output 
 ![Terminal Output](https://i.imgur.com/eQVuxKO.png)
+
+
+![Maurice](https://i.imgur.com/tT76fc9.jpg)  
+
