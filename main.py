@@ -32,6 +32,7 @@ def somefunc(data):
 
 @bot.on('notify_text_message')
 def notify_text_message(data):
+	pprint(data)
 	logger.info(bot.parse_log(data))
 
 	# Look for TV Links in the message 
@@ -130,11 +131,15 @@ def handle_tv_link_message(bot, tvlink, data):
 	if resp['ticker'] in bot.hashtag_map:
 		ht_selection = ht_selection + bot.hashtag_map[resp['ticker']] 
 
+	pprint(ht_selection)
+
 	tag_type = random.choice( ['$','#'] )
 	resp['hashtag'] = tag_type+random.choice(ht_selection)
 
 	resp['title'] = "{}:{}:{} @ {}".format( resp['exchange'], resp['ticker'], resp['timeframe_formatted'], resp['price'] )
 	message_twitter = "{}\n{}\n{}\n\n{}".format( resp['title'], data['txt_msg'], resp['hashtag'], resp['exchange_link']  )
+
+	pprint(message_twitter)
 
 	logger.info('sending to twitter')
 	data = { 

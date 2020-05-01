@@ -79,15 +79,15 @@ class TSBot( LoadYamlConfig ):
 		self._emit('client_list_refresh', self.channel_list)
 
 		resp = self.ts3conn.whoami()
-		room_id = 186875
+		room_id = self.config['TS_PRIMARY_ROOM_ID']
 		client_id=resp[0]['client_id']
 		self.ts3conn.clientmove(cid=room_id, clid=client_id)
 
 		self.ts3conn.servernotifyregister(event='server')
-		self.ts3conn.servernotifyregister(event='channel', id_=186875)
-		self.ts3conn.servernotifyregister(event='textserver', id_=186875)
-		self.ts3conn.servernotifyregister(event='textchannel', id_=186875)
-		self.ts3conn.servernotifyregister(event='textprivate', id_=186875)
+		self.ts3conn.servernotifyregister(event='channel', id_=self.config['TS_PRIMARY_ROOM_ID'])
+		self.ts3conn.servernotifyregister(event='textserver', id_=self.config['TS_PRIMARY_ROOM_ID'])
+		self.ts3conn.servernotifyregister(event='textchannel', id_=self.config['TS_PRIMARY_ROOM_ID'])
+		self.ts3conn.servernotifyregister(event='textprivate', id_=self.config['TS_PRIMARY_ROOM_ID'])
 
 		def listen_for_ts3_events():
 
@@ -175,7 +175,6 @@ class TSBot( LoadYamlConfig ):
 
 	def action_notifytextmessage(self, data):
 		data = data['event_parsed']
-		pprint(data)
 		data['clid'] = int(data['invokerid']) or int(data['clid'])
 		data['user'] = self.client_list[ data['clid'] ]
 
