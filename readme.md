@@ -19,9 +19,11 @@ python > 3.8
 
 ##### Make your config file
 ```bash
+# Make sure all your config details are correct
 cp config.sample.yaml config.yaml
 
-# Make sure all your config details are correct
+# Asssuming using zsh make sure locale is set right 
+echo 'export LANG=en_US.utf8' >> ~/.zshrc
 ```
 
 ### Usage 
