@@ -3,7 +3,6 @@ pytesseract
 Pillow
 opencv-python
 imutils
-random
 coloredlogs
 pyyaml
 ts3 
