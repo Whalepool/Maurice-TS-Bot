@@ -40,7 +40,7 @@ def notify_text_message(data):
 
 	if len(results) >= 1:
 
-		tv_link = results[0][0]
+		tv_link = results[0]
 		thread = threading.Thread(target=handle_tv_link_message, args=[bot, tv_link, data], daemon=True)
 		thread.start()
 
