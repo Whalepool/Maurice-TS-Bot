@@ -176,7 +176,7 @@ class TSBot( LoadYamlConfig ):
 	def action_notifytextmessage(self, data):
 		data = data['event_parsed']
 		pprint(data)
-		data['clid'] = int(data['invokerid'])
+		data['clid'] = int(data['invokerid']) or int(data['clid'])
 		data['user'] = self.client_list[ data['clid'] ]
 
 		data['channel'] = self.channel_list[ data['user']['cid'] ]
