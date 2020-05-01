@@ -1,0 +1,13 @@
+pprint
+io
+requests
+pytesseract
+Pillow
+opencv-python
+imutils
+random
+coloredlogs
+yaml
+ts3 
+zmq
+bbcode

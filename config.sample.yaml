@@ -1,0 +1,29 @@
+
+# ZMQ
+ZMQ_PUBLISH_TO_PORT: 5557
+
+TS_API_USERNAME: "meh"
+TS_API_PASSWORD: "mypassword"
+TS_SERVER_IP: "127.0.0.1"
+TS_SERVER_PORT: 1234
+
+TS_ROOM_IDS:
+  - 1234556
+
+TS_SERVER_ID: 123
+
+TS_BOT_USERNAME: "aname"
+
+
+HASHTAG_MAP:
+  SOME_RANDOM_KEYWORD: 
+    - "hashtag1"
+    - "hashtag2"
+  ANOTHER_RANDOM_KEYWORD: 
+    - "hashtag1"
+    - "hashtag3"
+
+
+LINK_MAP:
+  SOME_KEYWORD: 'https://my.associated.link'
+   
