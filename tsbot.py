@@ -329,7 +329,7 @@ class TSBot( LoadYamlConfig ):
 				cid = int(c['cid'])
 			elif 'tcid' in c:
 				cid = int(c['tcid'])
-			else
+			else:
 				cid = None 
 
 			self.client_list[ clid ] = {
