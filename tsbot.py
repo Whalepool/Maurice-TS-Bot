@@ -175,7 +175,10 @@ class TSBot( LoadYamlConfig ):
 
 	def action_notifytextmessage(self, data):
 		data = data['event_parsed']
-		data['clid'] = int(data['invokerid']) or int(data['clid'])
+		if 'invokerid' in data: 
+			data['clid'] = int(data['invokerid'])
+		else:
+			data['clid'] = int(data['clid'])
 		data['user'] = self.client_list[ data['clid'] ]
 
 		data['channel'] = self.channel_list[ data['user']['cid'] ]
@@ -316,6 +319,30 @@ class TSBot( LoadYamlConfig ):
 
 	def _emit(self, event, *args, **kwargs):
 		self.events.emit(event, *args, **kwargs)
+
+	def get_client(self, clid, c):
+		clid = int(clid)
+		if clid in self.client_list:
+			return self.client_list[clid]
+		else:
+			if 'cid' in c:
+				cid = int(c['cid'])
+			elif 'tcid' in c:
+				cid = int(c['tcid'])
+			else
+				cid = None 
+
+			self.client_list[ clid ] = {
+				'name': c['client_nickname'],
+				'database_id': int(c['client_database_id']),
+				'cid': cid,
+				'clid': clid,
+				'log_time': datetime.utcnow(),
+				'log': 'saw {} '.format(c['client_nickname']),
+				'log_parsed_bb': 'saw [color=#336600]{}[/color] in [color=#660066]{}[/color]'.format(c['client_nickname'])
+			}
+			if len(c['client_nickname']) > self.max_name_length:
+				self.max_name_length = len(c['client_nickname'])
 
 	def update_client_list(self, client_list):
 		self.client_list = {}
