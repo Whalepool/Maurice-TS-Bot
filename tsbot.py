@@ -329,7 +329,7 @@ class TSBot( LoadYamlConfig ):
 				'clid': clid,
 				'log_time': datetime.utcnow(),
 				'log': 'saw {} '.format(c['client_nickname']),
-				'log_parsed_bb': 'saw [color=#336600]{}[/color] in [color=#660066]{}[/color]'.format(c['client_nickname'])
+				'log_parsed_bb': 'saw [color=#336600]{}[/color]'.format(c['client_nickname'])
 			}
 			if len(c['client_nickname']) > self.max_name_length:
 				self.max_name_length = len(c['client_nickname'])
