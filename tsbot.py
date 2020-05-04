@@ -167,8 +167,12 @@ class TSBot( LoadYamlConfig ):
 		data = data['event_parsed']
 		if 'invokerid' in data: 
 			data['clid'] = int(data['invokerid'])
-		else:
+		elif 'clid' in data:
 			data['clid'] = int(data['clid'])
+		else:
+			pprint(data)
+			pprint('missing invoker and clid... wtf')
+			exit()
 		data['user'] = self.get_client( data['clid'], data )
 
 		data['channel'] = self.channel_list[ data['user']['cid'] ]
