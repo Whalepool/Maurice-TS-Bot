@@ -132,7 +132,14 @@ class TSBot( LoadYamlConfig ):
 
 	def action_notifyclientleftview(self, data):
 		data = data['event_parsed']
-		data['clid'] = int(data['clid'])
+		if 'invokerid' in data: 
+			data['clid'] = int(data['invokerid'])
+		elif 'clid' in data:
+			data['clid'] = int(data['clid'])
+		else:
+			pprint(data)
+			pprint('missing invoker and clid... wtf')
+			exit()
 		data['user'] = self.get_client( data['clid'], data )
 		data['log_time'] = datetime.utcnow()
 		data['log'] = ">>> Disconnected: {username_short}, {reason}"
@@ -150,7 +157,14 @@ class TSBot( LoadYamlConfig ):
 
 	def action_notifycliententerview(self, data):
 		data = data['event_parsed']
-		data['clid'] = int(data['clid'])
+		if 'invokerid' in data: 
+			data['clid'] = int(data['invokerid'])
+		elif 'clid' in data:
+			data['clid'] = int(data['clid'])
+		else:
+			pprint(data)
+			pprint('missing invoker and clid... wtf')
+			exit()
 		data['log_time'] = datetime.utcnow()
 		data['log'] = ">>> Connected: {username_short}"
 		data['user'] = self.get_client( data['clid'], data )
@@ -190,7 +204,14 @@ class TSBot( LoadYamlConfig ):
 
 	def action_notifyclientmoved(self, data):
 		data = data['event_parsed']
-		data['clid'] = int(data['clid'])
+		if 'invokerid' in data: 
+			data['clid'] = int(data['invokerid'])
+		elif 'clid' in data:
+			data['clid'] = int(data['clid'])
+		else:
+			pprint(data)
+			pprint('missing invoker and clid... wtf')
+			exit()
 		data['user'] = self.get_client( data['clid'], data )
 		data['to_channel'] = self.channel_list[ int(data['ctid']) ]
 		data['log_time'] = datetime.utcnow()
@@ -215,7 +236,14 @@ class TSBot( LoadYamlConfig ):
 
 	def action_notifychanneledited(self, data):
 		data = data['event_parsed']
-		data['clid'] = int(data['invokerid'])
+		if 'invokerid' in data: 
+			data['clid'] = int(data['invokerid'])
+		elif 'clid' in data:
+			data['clid'] = int(data['clid'])
+		else:
+			pprint(data)
+			pprint('missing invoker and clid... wtf')
+			exit()
 		data['user'] = self.get_client( data['clid'], data )
 		data['channel'] = self.channel_list[ data['user']['cid'] ]
 		data['eddited_cname'] = data['channel_name']
