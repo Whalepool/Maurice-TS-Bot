@@ -15,8 +15,13 @@ from pprint import pprint
 import bbcode
 import time
 import re
+
+from collections import OrderedDict
+
 logger = logging.getLogger(__name__)
-coloredlogs.install(level='DEBUG', logger=logger)
+coloredlogs.install(level='INFO', logger=logger)
+lock = threading.Lock()
+
 
 class TSBot( LoadYamlConfig ):
 
@@ -27,19 +32,15 @@ class TSBot( LoadYamlConfig ):
 		# Load config
 		LoadYamlConfig.__init__(self)
 
-		self.hashtag_map = self.config['HASHTAG_MAP']
-		self.link_map = self.config['LINK_MAP']
-		self.link_map_list = list( self.link_map.keys() )
-
 		# Event handlers
 		self.events = EventEmitter(scheduler=asyncio.ensure_future)
 
 		# Channel list
-		self.channel_list = {} 
+		self.channel_list = OrderedDict()
 		self.max_cname_length = 20
 
 		# Clients list
-		self.client_list = {}
+		self.client_list = OrderedDict()
 		self.max_name_length = 20
 
 		# Text Message parser
@@ -68,20 +69,38 @@ class TSBot( LoadYamlConfig ):
 		self.ts3conn.use(sid=self.config['TS_SERVER_ID'])
 		self.ts3conn.clientupdate(client_nickname=self.config['TS_BOT_USERNAME']+self.id_generator(6))
 
-		channel_list = self.ts3conn.channellist()
-		channel_list = channel_list.parsed
-		self.update_channel_list( channel_list ) 
-		self._emit('channel_list_refresh', self.channel_list)
 
-		client_list = self.ts3conn.clientlist()
-		client_list = client_list.parsed
-		self.update_client_list( client_list ) 
-		self._emit('client_list_refresh', self.channel_list)
+		###############################
+		# Channels 
+		self.build_channels_list()
+
+
+		###############################
+		# Clients 
+		self.build_clients_list()
+
+
+		###############################
+		# Server Grouops 
+		# ts3cmd.servergroupclientlist(sgid=8, names=True)
+		self.server_groups = OrderedDict()
+		for sg in self.ts3conn.servergrouplist()._parsed:
+			if sg['type'] == '1': 
+				self.server_groups[ int(sg['sgid']) ] = OrderedDict({
+					'sgid': int(sg['sgid']),
+					'iconid': int(sg['iconid']),
+					'name': sg['name'],
+					'sortid': int(sg['sortid'])
+				})
+		self.server_groups = OrderedDict(sorted(self.server_groups.items(), key=lambda item: item[1]['sortid']))
+
+
 
 		resp = self.ts3conn.whoami()
 		room_id = self.config['TS_PRIMARY_ROOM_ID']
-		client_id=resp[0]['client_id']
-		self.ts3conn.clientmove(cid=room_id, clid=client_id)
+		clid=resp[0]['client_id']
+		if resp[0]['client_channel_id'] != room_id:
+			self.ts3conn.clientmove(cid=room_id, clid=clid)
 
 		self.ts3conn.servernotifyregister(event='server')
 		self.ts3conn.servernotifyregister(event='channel', id_=self.config['TS_PRIMARY_ROOM_ID'])
@@ -110,11 +129,11 @@ class TSBot( LoadYamlConfig ):
 					event_data_as_string = TS3Escape.unescape(event._data[0].decode("utf-8"))
 					(action, rest) = event_data_as_string.split(maxsplit=1)
 
-					data = {
+					data = OrderedDict({
 						'action': action,
 						'event_raw': event._data[0],
 						'event_parsed': event._parsed[0],
-					}
+					})
 					if action in message_types:
 						func = 'action_'+action
 					else:
@@ -127,145 +146,341 @@ class TSBot( LoadYamlConfig ):
 
 
 	def action_unknown(self, data):
-		pprint(data) 
-
+		logger.critical('Uknown action') 
+		pprint(data)
 
 	def action_notifyclientleftview(self, data):
-		data = data['event_parsed']
-		if 'invokerid' in data: 
-			data['clid'] = int(data['invokerid'])
-		elif 'clid' in data:
-			data['clid'] = int(data['clid'])
-		else:
-			pprint(data)
-			pprint('missing invoker and clid... wtf')
-			exit()
-		data['user'] = self.get_client( data['clid'], data )
-		data['log_time'] = datetime.utcnow()
-		data['log'] = ">>> Disconnected: {username_short}, {reason}"
-		# .format(data['user']['name'], data['reasonmsg'])
+		parsed = data['event_parsed']
+		# {'cfid': '44179', 'clid': '31025', 'ctid': '0', 'reasonid': '8', 'reasonmsg': 'leaving'}
 
-		# Reset the last channel they were in
-		self.client_list[ data['clid'] ]['cid'] = None
+		# Client id 
+		clid = int(parsed['clid'])
 
-		self.client_list[ data['clid'] ]['log_time'] = data['log_time']
-		self.client_list[ data['clid'] ]['log'] = data['log']
-		self.client_list[ data['clid'] ]['log_parsed_bb'] = self.parse_log( data, bbcode=True )
+		# User 
+		user = self.get_client(clid, allow_short=True)
 
-		self._emit('notify_client_disconnected', data)
+		# From chan 
+		cfid = int(parsed['cfid'])
+		from_chan = self.get_channel(cfid)
+		self.channel_list[cfid]['total_clients'] -= 1 
+
+		if 'reasonmsg' not in parsed:
+			parsed['reasonmsg'] = '' 
+
+		# Update client 
+		self.update_client( 
+			clid, 
+			OrderedDict({
+				'log_time': datetime.utcnow(),
+				'log_msg': ">>> {username} disconnected from {from_channel}: {reasonmsg}",
+				'log_params': {
+					'username': user['client_nickname'],
+					'from_channel': from_chan['channel_name'],
+					'reasonmsg': parsed['reasonmsg'],
+				}
+			}),
+			allow_short=True
+		)
+		self.update_client(clid, OrderedDict({'log_parsed_bb': self.parse_log( clid, bbcode=True )}),allow_short=True)
+
+		# Output log 
+		print( self.parse_log(clid) )
+
+		self._emit('notifyclientleftview', data)
 
 
 	def action_notifycliententerview(self, data):
-		data = data['event_parsed']
-		if 'invokerid' in data: 
-			data['clid'] = int(data['invokerid'])
-		elif 'clid' in data:
-			data['clid'] = int(data['clid'])
-		else:
-			pprint(data)
-			pprint('missing invoker and clid... wtf')
-			exit()
-		data['log_time'] = datetime.utcnow()
-		data['log'] = ">>> Connected: {username_short}"
-		data['user'] = self.get_client( data['clid'], data )
+		parsed = data['event_parsed']
 
-		self.client_list[ data['clid'] ]['log_time'] = data['log_time']
-		self.client_list[ data['clid'] ]['log'] = data['log']
-		self.client_list[ data['clid'] ]['log_parsed_bb'] = self.parse_log( data, bbcode=True )
+		# Client id 
+		clid = int(parsed['clid'])
 
-		self._emit('notify_client_connected', data)
+		# User 
+		user = self.get_client(clid)
+
+		# to chanel
+		ctid = int(parsed['ctid'])
+		to_chan = self.get_channel(ctid)
+		self.channel_list[ ctid ]['total_clients'] += 1 
+
+
+		# Update client 
+		self.update_client( 
+			clid, 
+			OrderedDict({
+				'cid': int(parsed['ctid']), ## Destination channel = parsed['ctid']
+				'log_time': datetime.utcnow(),
+				'log_msg': ">>> Connected: {username}, joining {to_channel}",
+				'log_params': {
+					'username': user['client_nickname'],
+					'to_channel': to_chan['channel_name'],
+				}
+			})
+		)
+		self.update_client(clid, OrderedDict({'log_parsed_bb': self.parse_log( clid, bbcode=True )}))
+
+		# Output log 
+		print( self.parse_log(clid) )
+
+		self._emit('notifycliententerview', data)
 
 
 
 	def action_notifytextmessage(self, data):
-		data = data['event_parsed']
-		if 'invokerid' in data: 
-			data['clid'] = int(data['invokerid'])
-		elif 'clid' in data:
-			data['clid'] = int(data['clid'])
-		else:
-			pprint(data)
-			pprint('missing invoker and clid... wtf')
-			exit()
-		data['user'] = self.get_client( data['clid'], data )
+		parsed = data['event_parsed']
+		# {'invokerid': '30223', 'invokername': 'flibbr', 'invokeruid': '/KkbqSqfXWRUhCwlIEXhiHtLv/s=', 'msg': 'test', 'targetmode': '2'}
+		pprint(parsed)
+		
+		# Client id 
+		clid = int(parsed['invokerid'])
 
-		data['channel'] = self.channel_list[ data['user']['cid'] ]
-		data['txt_msg'] = self.txtmsg_parser.strip(data['msg'])
-		data['log_time'] = datetime.utcnow()
-		data['log'] = "{username} in {curr_channel} said: {text_msg}"
+		# User 
+		user = self.get_client(clid)
 
-		self.client_list[ data['clid'] ]['log_time'] = data['log_time']
-		self.client_list[ data['clid'] ]['log'] = data['log']
-		self.client_list[ data['clid'] ]['log_parsed_bb'] = self.parse_log( data, bbcode=True )
+		# to chanel
+		to_chan = self.get_channel(user['cid'])
 
-		self._emit('notify_text_message', data)
+		# Update client 
+		self.update_client( 
+			clid, 
+			OrderedDict({
+				'log_time': datetime.utcnow(),
+				'log_msg': "{username} in {to_channel} said: {text_msg}",
+				'log_params': {
+					'username': user['client_nickname'],
+					'to_channel': to_chan['channel_name'],
+					'text_msg': parsed['msg'],
+				}
+			})
+		)
+		self.update_client(clid, OrderedDict({'log_parsed_bb': self.parse_log( clid, bbcode=True )}))
+
+		# Output log 
+		print( self.parse_log(clid) )
+		
+		data['event_parsed']['txt_msg'] = self.txtmsg_parser.strip(parsed['msg'])
+
+		self._emit('notifytextmessage', data)
 
 
 
 	def action_notifyclientmoved(self, data):
-		data = data['event_parsed']
-		if 'invokerid' in data: 
-			data['clid'] = int(data['invokerid'])
-		elif 'clid' in data:
-			data['clid'] = int(data['clid'])
+
+		# {'clid': '30223', 'ctid': '44179', 'reasonid': '0'}
+		parsed = data['event_parsed']
+
+		# Client id 
+		clid = int(parsed['clid'])
+
+		# User 
+		user = self.get_client(clid)
+		
+		# Channel to
+		ctid = int(parsed['ctid'])
+		to_chan = self.get_channel(ctid)
+		self.channel_list[ctid]['total_clients'] += 1 
+
+		# Reason id ..  ? 
+		reasonid = int(parsed['reasonid'] )
+
+		log_msg = ''
+		log_params = {}
+		if 'cid' in user: 
+			leave_chan = self.get_channel(user['cid'])
+			self.channel_list[user['cid']]['total_clients'] -= 1 
+
+			log_msg = '{username} moved from {from_channel} to {to_channel}'
+			log_params = {
+				'username': user['client_nickname'],
+				'from_channel': leave_chan['channel_name'],
+				'to_channel': to_chan['channel_name'],
+			}
 		else:
-			pprint(data)
-			pprint('missing invoker and clid... wtf')
-			exit()
-		data['user'] = self.get_client( data['clid'], data )
-		data['to_channel'] = self.channel_list[ int(data['ctid']) ]
-		data['log_time'] = datetime.utcnow()
+			'{username} moved to {to_channel}'
+			log_params = {
+				'username': user['client_nickname'],
+				'to_channel': to_chan['channel_name'],
+			}
 
-		# already in a channel
-		if data['user']['cid'] is not None:
-			data['from_channel'] = self.channel_list[ data['user']['cid'] ]
-			log = '{username_short} moved from {from_channel} to {to_channel}'
-		else:
-			log = "{username_short} moved to {to_channel}"
+		# Update client 
+		self.update_client( 
+			clid, 
+			OrderedDict({
+				'cid': ctid, # Update that the client to say he's in the new channel
+				'log_time': datetime.utcnow(),
+				'log_msg': log_msg,
+				'log_params': log_params
+			})
+		)
+		self.update_client(clid, OrderedDict({'log_parsed_bb': self.parse_log( clid, bbcode=True )}))
 
-		data['log'] = log
+		# Output log 
+		print( self.parse_log(clid) )
 
-		self.client_list[ data['clid'] ]['cid'] = int(data['ctid'])
-		self.client_list[ data['clid'] ]['log_time'] = data['log_time']
-		self.client_list[ data['clid'] ]['log'] = log
-		self.client_list[ data['clid'] ]['log_parsed_bb'] = self.parse_log( data, bbcode=True )
-
-
-		self._emit('notify_client_moved', data)
+		self._emit('notifyclientmoved', data)
 
 
 	def action_notifychanneledited(self, data):
-		data = data['event_parsed']
-		if 'invokerid' in data: 
-			data['clid'] = int(data['invokerid'])
-		elif 'clid' in data:
-			data['clid'] = int(data['clid'])
-		else:
-			pprint(data)
-			pprint('missing invoker and clid... wtf')
-			exit()
-		data['user'] = self.get_client( data['clid'], data )
-		data['channel'] = self.channel_list[ data['user']['cid'] ]
-		data['eddited_cname'] = data['channel_name']
-		data['log_time'] = datetime.utcnow()
-		data['log'] = "{username_short} edited {curr_channel} to {eddited_cname}"
 
-		# Update the channel name in the names list
-		self.channel_list[ data['user']['cid'] ]['name'] = data['channel_name']
-		self.client_list[ data['clid'] ]['log_parsed_bb'] = self.parse_log( data, bbcode=True )
+		# {'channel_name': 'Main Room  #eddieknew again', 'cid': '186875', 'invokerid': '30223', 'invokername': 'flibbr', 'invokeruid': '/KkbqSqfXWRUhCwlIEXhiHtLv/s=', 'reasonid': '10' }
+		parsed = data['event_parsed']
+
+		# Client id 
+		clid = int(parsed['invokerid'])
+
+		# User 
+		user = self.get_client(clid)
+
+		# Channel to
+		cid = int(parsed['cid'])
+		from_chan = self.get_channel(cid)
+
+		# Update client 
+		self.update_client( 
+			clid, 
+			OrderedDict({
+				'log_time': datetime.utcnow(),
+				'log_msg': "{username} edited {from_channel} name to {to_channel}",
+				'log_params': {
+					'username': user['client_nickname'],
+					'from_channel': from_chan['channel_name'],
+					'to_channel': parsed['channel_name'],
+				}
+			})
+		)
+		self.update_client(clid, OrderedDict({'log_parsed_bb': self.parse_log( clid, bbcode=True )}))
+			
+		self.channel_list[cid]['channel_list'] = parsed['channel_name']
+
+		# Output log 
+		print( self.parse_log(clid) )
 
 		self._emit('notify_channel_edited', data)
 
 
+	###############################
+	# Channels 
+	def build_channels_list(self):
+		channel_list = self.ts3conn.channellist()
+		channel_list = channel_list.parsed 
+		self.channel_list = OrderedDict()
+		for c in channel_list: 
+			self.channel_list[ int(c['cid']) ] = OrderedDict({
+  			'cid': int(c['cid']),
+				'channel_name': c['channel_name'],
+				'total_clients': int(c['total_clients']),
+			})
 
-	def parse_log(self, data, bbcode=False):
+	def get_channel(self, cid):
+		if cid in self.channel_list:
+			return self.channel_list[cid]
+		else:
+			self.build_channels_list()
+			return self.channel_list[cid]
+
+
+	##############################
+	# Clients
+	def build_clients_list(self):
+		client_list = self.ts3conn.clientlist()
+		client_list = client_list.parsed 
+		
+		for c in client_list:
+			to_chan = self.get_channel(int(c['cid']))
+			clid = int(c['clid'])
+
+			self.client_list[ clid ] = OrderedDict({
+				'clid': clid, 
+				'cid': int(c['cid']),
+				# 'client_country': parsed['client_country'],
+				# 'client_created': datetime.utcfromtimestamp(int(parsed['client_created'])), # unixtime
+				# 'client_lastconnected': datetime.utcfromtimestamp(int(parsed['client_created'])), # unixtime
+				'client_nickname': c['client_nickname'],
+				# 'client_nickname_phonetic': parsed['client_nickname_phonetic'],
+				# 'client_platform': parsed['client_platform'],
+				# 'client_servergroups': OrderedDict({}),
+				# 'client_talk_power': int(parsed['client_talk_power']),
+				# 'client_totalconnections': int(parsed['client_totalconnections']),
+				# 'client_unique_identifier': parsed['client_unique_identifier'],
+				# 'server_groups': parsed['client_servergroups'].split(','),
+				'log_time': datetime.utcnow(),
+				'log_msg': 'saw {username} in {to_channel} when I connected',
+				'log_parsed_bb': '',
+				'log_params': {
+					'username': c['client_nickname'],
+					'to_channel': to_chan['channel_name']
+				},
+			})
+			self.update_client(clid, OrderedDict({'log_parsed_bb': self.parse_log( clid, bbcode=True )}),allow_short=True)
+
+
+	def get_client(self, clid, allow_short=False ):
+		logger.debug('Getting client info for {}'.format(clid))
+
+		def build_client(clid):
+			parsed = self.ts3conn.clientinfo(clid=clid)._parsed[0]
+
+			self.client_list[clid] = OrderedDict({
+				'clid': clid, 
+				'cid': int(parsed['cid']),
+				'client_country': parsed['client_country'],
+				'client_created': datetime.utcfromtimestamp(int(parsed['client_created'])), # unixtime
+				'client_lastconnected': datetime.utcfromtimestamp(int(parsed['client_created'])), # unixtime
+				'client_nickname': parsed['client_nickname'],
+				'client_nickname_phonetic': parsed['client_nickname_phonetic'],
+				'client_platform': parsed['client_platform'],
+				'client_servergroups': OrderedDict({}),
+				'client_talk_power': int(parsed['client_talk_power']),
+				'client_totalconnections': int(parsed['client_totalconnections']),
+				'client_unique_identifier': parsed['client_unique_identifier'],
+				'server_groups': parsed['client_servergroups'].split(','),
+				'log_time': datetime.utcnow(),
+				'log_msg': '',
+				'log_parsed_bb': '',
+				'log_params': OrderedDict(),
+			})
+			self.update_client(clid, OrderedDict({'log_parsed_bb': self.parse_log( clid, bbcode=True )}))
+
+		if clid in self.client_list:
+			# Is a 'large' client entry, return it
+			if 'client_nickname_phonetic' in self.client_list[clid]:
+				logger.debug('Returning full client info for {}'.format(clid))
+			# Is a quick client entry, build it.. 
+			else:
+				if allow_short == False: 
+					logger.debug('Building full client info for {}'.format(clid))
+					# Get the users existing channel 
+					cid = self.client_list[clid]['cid'] 
+
+					# Get the full client info
+					build_client(clid)
+
+					# Restore the original channel (incase we're fetching full from a move) 
+					self.client_list[clid]['cid'] = cid
+
+		else:
+			logger.debug('Making new client for {}'.format(clid))
+			build_client(clid)
+
+		
+		return self.client_list[clid]
+
+
+	def update_client(self, clid, data, allow_short=False):
+
+			user = self.get_client(clid, allow_short=allow_short)
+			for k,v in data.items():
+				self.client_list[clid][k] = v 
+
+
+	def parse_log(self, clid, bbcode=False):
 		end_c = '\033[0m'
 		green = '\u001b[38;5;154m'
 		green_end = '\033[0m'
 		purple = '\u001b[38;5;141m'
 		blue = '\u001b[38;5;123m'
 		red = '\u001b[38;5;196m' 
-		custom = '\u001b[38;5;1'+str(data['clid'])[-2]+str(data['clid'])[-1]+'m'
+		custom = '\u001b[38;5;1'+str(clid)[-2]+str(clid)[-1]+'m'
 
 		if bbcode == True: 
 			end_c = '[/color]'
@@ -275,49 +490,40 @@ class TSBot( LoadYamlConfig ):
 			red = '[color=#cc0000]' 
 			custom = '[color=#003300]'
 
-		username = "{}{}{}".format(green, data['user']['name'], end_c)
-		username_short = username 
-		username = ("{:<"+str(self.max_name_length)+"}").format(username)
+		user = self.get_client(clid, allow_short=True)
 
-		curr_channel = ''
-		if data['user']['cid'] is not None:
-			data['channel'] = self.channel_list[ data['user']['cid'] ]
-			curr_channel = "{}{}{}".format(purple, data['channel']['name'], end_c)
-			curr_channel = ("{:<"+str(self.max_cname_length)+"}").format(curr_channel)
+		username = ''
+		if 'username' in user['log_params']: 		
+			username = "{}({}) {}{}".format(green, user['clid'], user['log_params']['username'], end_c)
+			username_short = username 
+			username = ("{:<"+str(self.max_name_length)+"}").format(username)
 
 		from_channel = ''
-		if 'from_channel' in data:
-			from_channel = "{}{}{}".format(blue, data['from_channel']['name'] , end_c)
+		if 'from_channel' in user['log_params']:
+			from_channel = "{}{}{}".format(purple, user['log_params']['from_channel'], end_c)
 			from_channel = ("{:<"+str(self.max_cname_length)+"}").format(from_channel)
 
-
 		to_channel = ''
-		if 'to_channel' in data:
-			to_channel = "{}{}{}".format(blue, data['to_channel']['name'] , end_c)
+		if 'to_channel' in user['log_params']:
+			to_channel = "{}{}{}".format(blue, user['log_params']['to_channel'] , end_c)
 			to_channel = ("{:<"+str(self.max_cname_length)+"}").format(to_channel)
 
-		eddited_cname = ''
-		if 'eddited_cname' in data:
-			eddited_cname = "{}{}{}".format(blue, data['eddited_cname'], end_c)
-			eddited_cname = ("{:<"+str(self.max_cname_length)+"}").format(eddited_cname)
 
-		reason = '' 
-		if 'reasonmsg' in data:
-			reason = "{}{}{}".format(red, data['reasonmsg'], end_c)
+		reasonmsg = '' 
+		if 'reasonmsg' in user['log_params']:
+			reasonmsg = "{}{}{}".format(red, user['log_params']['reasonmsg'], end_c)
 
 		text_msg = '' 
-		if 'txt_msg' in data:		
-			text_msg = "{}{}{}".format(custom, data['txt_msg'], end_c)
+		if 'text_msg' in user['log_params']:
+			text_msg = "{}{}{}".format(custom, user['log_params']['text_msg'], end_c)
 
 
-		out = data['log'].format(
+		out = user['log_msg'].format(
 						username 			= username, 
-						username_short = username_short,
-						curr_channel	= curr_channel,
+						# username_short = username_short,
 						from_channel  = from_channel,
 						to_channel		= to_channel,
-						eddited_cname = eddited_cname,
-						reason 				=	reason,
+						reasonmsg 				=	reasonmsg,
 						text_msg 			= text_msg,
 			)
 		return out 
@@ -341,61 +547,6 @@ class TSBot( LoadYamlConfig ):
 
 	def _emit(self, event, *args, **kwargs):
 		self.events.emit(event, *args, **kwargs)
-
-	def get_client(self, clid, c):
-		clid = int(clid)
-		if clid in self.client_list:
-			return self.client_list[clid]
-		else:
-			if 'cid' in c:
-				cid = int(c['cid'])
-			elif 'ctid' in c:
-				cid = int(c['ctid'])
-			else:
-				cid = None 
-
-			self.client_list[ clid ] = {
-				'name': c['client_nickname'],
-				'database_id': int(c['client_database_id']),
-				'cid': cid,
-				'clid': clid,
-				'log_time': datetime.utcnow(),
-				'log': 'saw {} '.format(c['client_nickname']),
-				'log_parsed_bb': 'saw [color=#336600]{}[/color]'.format(c['client_nickname'])
-			}
-			if len(c['client_nickname']) > self.max_name_length:
-				self.max_name_length = len(c['client_nickname'])
-
-			return self.client_list[clid]
-
-	def update_client_list(self, client_list):
-		self.client_list = {}
-		for c in client_list:
-			self.client_list[ int(c['clid']) ] = {
-				'name': c['client_nickname'],
-				'database_id': int(c['client_database_id']),
-				'cid': int(c['cid']),
-				'clid': int(c['clid']),
-				'log_time': datetime.utcnow(),
-				'log': 'saw {} in {} when I connected '.format(c['client_nickname'], self.channel_list[int(c['cid'])]['name']),
-				'log_parsed_bb': 'saw [color=#336600]{}[/color] in [color=#660066]{}[/color] when I connected '.format(c['client_nickname'], self.channel_list[int(c['cid'])]['name'])
-			}
-			if len(c['client_nickname']) > self.max_name_length:
-				self.max_name_length = len(c['client_nickname'])
-
-
-	def update_channel_list(self, channel_list):
-		self.channel_list = {} 
-		for c in channel_list:
-			self.channel_list[ int(c['cid']) ] = {
-				'name': c['channel_name'],
-				'needed_subscriber_power': int(c['channel_needed_subscribe_power']),
-				'order': int(c['channel_order']),
-				'cid': int(c['cid']),
-				'pid': int(c['pid']),
-			}
-			if len(c['channel_name']) > self.max_cname_length:
-				self.max_cname_length = len(c['channel_name'])
 
 	async def _keep_alive(self):
 		while True:
